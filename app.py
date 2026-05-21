@@ -56,6 +56,39 @@ def calculate_advanced_metrics(initial_investment, cash_flows, discount_rate):
 # --- UI SETUP ---
 st.set_page_config(page_title="Strategic Capital Budgeting Suite", layout="wide")
 
+# 🛑 HARDENED MOBILE SCROLL-LOCK FILTER (Injected directly into browser window tree)
+st.markdown("""
+    <style>
+    /* Force lock structural view containers on Android System WebView */
+    html, body, [data-testid="stAppViewContainer"], .main, .block-container {
+        overscroll-behavior-y: contain !important;
+        overscroll-behavior-x: none !important;
+        overflow-y: auto !important;
+    }
+    .main .block-container {padding-top: 2rem;}
+    div[data-testid="stMetricValue"] {font-size: 24px; font-weight: bold;}
+    </style>
+    
+    <script>
+    // Intercept downward drag vectors right at the page ceiling boundary
+    let touchStartOffsetY = 0;
+    
+    window.addEventListener('touchstart', function(e) {
+        touchStartOffsetY = e.touches[0].clientY;
+    }, { passive: false });
+
+    window.addEventListener('touchmove', function(e) {
+        let touchCurrentOffsetY = e.touches[0].clientY;
+        let diffY = touchCurrentOffsetY - touchStartOffsetY;
+        
+        // If device context viewport is pinned at 0 and pulls down, cancel event action
+        if (window.scrollY === 0 && diffY > 0) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+    </script>
+""", unsafe_allow_html=True)
+
 st.title("🦅 Strategic Capital Budgeting Suite")
 st.caption("Enterprise Risk Analytics & Scenario Valuation Modeler")
 st.divider()
@@ -114,53 +147,60 @@ if len(raw_cash_flows) > 0:
 
     # --- TOP LEVEL SAAS METRICS DISPLAY ---
     st.divider()
+    st.subheader("📊 Capital Budgeting KPIs")
     col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
-        st.metric("Net Present Value (NPV)", f"${npv:,.2f}", 
-                  delta="Value Created" if npv >= 0 else "Value Destroyed", 
-                  delta_color="normal" if npv >= 0 else "inverse")
+        st.metric(
+            label="Net Present Value (NPV)", 
+            value=f"${npv:,.2f}", 
+            delta="🟢 Feasible" if npv >= 0 else "🔴 Unfeasible",
+            delta_color="normal" if npv >= 0 else "inverse"
+        )
     with col2:
-        irr_txt = f"{irr:.2f}%" if irr is not None else "N/A"
-        st.metric("Internal Rate of Return (IRR)", irr_txt,
-                  delta="Clearance" if (irr and irr > wacc_input) else "Deficit",
-                  delta_color="normal" if (irr and irr > wacc_input) else "inverse")
+        irr_txt = f"{irr:.2f}%" if irr is not None else "Error"
+        st.metric(
+            label="Internal Rate (IRR)", 
+            value=irr_txt,
+            delta="🟢 IRR > WACC" if (irr and irr > wacc_input) else "🔴 IRR < WACC",
+            delta_color="normal" if (irr and irr > wacc_input) else "inverse"
+        )
     with col3:
-        pbp_txt = f"{pbp:.2f} Yrs" if pbp is not None else "Never"
-        st.metric("Simple Payback (PBP)", pbp_txt)
+        pbp_txt = f"{pbp:.2f} Yrs" if pbp is not None else "N/A"
+        st.metric(label="Simple Payback", value=pbp_txt)
     with col4:
-        dpp_txt = f"{dpp:.2f} Yrs" if dpp is not None else "Never"
-        st.metric("Discounted Payback (DPP)", dpp_txt, help="Accounting for inflation/WACC erosion.")
+        dpp_txt = f"{dpp:.2f} Yrs" if dpp is not None else "N/A"
+        st.metric(label="Discounted Payback", value=dpp_txt)
     with col5:
-        st.metric("Profitability Index (PI)", f"{pi:.2f}x", 
-                  delta="Accretive" if pi >= 1.0 else "Dilutive",
-                  delta_color="normal" if pi >= 1.0 else "inverse")
+        st.metric(
+            label="Profitability Index", 
+            value=f"{pi:.2f}x",
+            delta="Value Adding" if pi >= 1.0 else "Value Destroying",
+            delta_color="normal" if pi >= 1.0 else "inverse"
+        )
 
-    # --- ADVANCED CHARTS & GRAPHS ---
+    # --- ADVANCED GRAPHICAL INTERFACES ---
     st.divider()
     chart_col1, chart_col2 = st.columns(2)
     
     with chart_col1:
-        st.subheader("📈 Capital Recovery Timeline (Nominal vs Discounted)")
-        # Plot both metrics together to see visual gap caused by cost of capital
+        st.subheader("📈 Cumulative Recovery Trajectory")
         plot_df = metrics_df[["Cum. Cash Flow", "Cum. Present Value"]].copy()
-        # Insert Year 0 for complete origin tracking
         origin = pd.DataFrame([[-initial_investment, -initial_investment]], 
                              columns=["Cum. Cash Flow", "Cum. Present Value"], index=["Year 0"])
         plot_df = pd.concat([origin, plot_df])
-        st.line_chart(plot_df)
+        st.line_chart(plot_df, use_container_width=True)
         
     with chart_col2:
-        st.subheader("📉 WACC Sensitivity Stress Curve")
-        # Loop through different interest rates to show volatility of your investment decision
+        st.subheader("📉 WACC Cost Sensitivity Scale")
         rates = np.linspace(0.01, 0.25, 20)
         npvs = [npf.npv(r, [-initial_investment] + processed_cash_flows) for r in rates]
-        sensitivity_df = pd.DataFrame({"Cost of Capital (WACC)": rates * 100, "Resulting NPV ($)": npvs}).set_index("Cost of Capital (WACC)")
-        st.line_chart(sensitivity_df)
+        sensitivity_df = pd.DataFrame({"WACC %": rates * 100, "Project NPV ($)": npvs}).set_index("WACC %")
+        st.line_chart(sensitivity_df, use_container_width=True)
 
-    # --- LEDGER DATA DISCLOSURE ---
+    # --- DETAILED LEDGER DATAFRAME ---
     st.divider()
-    st.subheader("📑 Detailed Valuation Ledger")
+    st.subheader("📑 Financial Amortization Ledger")
     format_dict = {
         "Cash Flow": "${:,.2f}", "Discount Factor": "{:.4f}", 
         "Present Value": "${:,.2f}", "Cum. Cash Flow": "${:,.2f}", "Cum. Present Value": "${:,.2f}"
@@ -169,4 +209,3 @@ if len(raw_cash_flows) > 0:
 
 else:
     st.info("💡 Please type at least one valid future cash flow item inside the data schedule grid above.")
-      
